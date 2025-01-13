@@ -1,0 +1,4 @@
+[submodule "papermill_enhancement"]
+	path = papermill_enhancement
+	url = https://github.com/KentaroAOKI/papermill.git
+	branch = enhancement-exception-handling
