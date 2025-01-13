@@ -40,8 +40,8 @@ python python_code_interpreter.py
 If you are using OpenAI, please modify the following part of python_code_interpreter.py.
 
 ```python
-        self.client = OpenAI()
-        # self.client = AzureOpenAI()
+self.client = OpenAI()
+# self.client = AzureOpenAI()
 ```
 
 ### Example
@@ -59,6 +59,23 @@ A notebook file with the execution date and time is created in the results direc
 Notebook where data analysis steps were recorded.
 - results/result_20250113-082727.json  
 Log of messages sent to API.
+
+
+#### Example 1
+"Retrieve NVIDIA stock prices from Yahoo for January to March 2023 and predict prices from April 2023 onwards."  
+Result: [sample_01.ipynb](https://github.com/KentaroAOKI/python_code_interpreter/blob/main/sample_results/sample_01.ipynb)
+
+#### Example 2
+"Determine whether the data in /mnt/data/diagnosis.csv is malignant or benign. To make a decision, use the model learned using the load_breast_cancer data available from scikit-learn."  
+Result: [sample_02.ipynb](https://github.com/KentaroAOKI/python_code_interpreter/blob/main/sample_results/sample_02.ipynb)
+
+#### Example 3
+"2023年の1月から3月のNVIDIA株価をYahooから取得して、2023年4月以降の株価を予測してください。"  
+Result: [sample_03.ipynb](https://github.com/KentaroAOKI/python_code_interpreter/blob/main/sample_results/sample_03.ipynb)
+
+#### Example 4
+"/mnt/data/diagnosis.csv のデータが悪性か良性か判断してください。判断は、scikit-learn から取得できる load_breast_cancer データで学習したモデルを使ってください。日本語で説明してください。"  
+Result: [sample_04.ipynb](https://github.com/KentaroAOKI/python_code_interpreter/blob/main/sample_results/sample_04.ipynb)
 
 ## Environment Variables
 Set environment variables in .env file.
