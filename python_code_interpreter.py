@@ -68,6 +68,13 @@ class PythonCodeInterpreter():
         self.available_functions = {
             "python": self.run_python_code_in_notebook,
         } 
+    
+    def ask_continue(self):
+        result = False
+        user_input = input("Do you want to continue running this program?(yes/no): ").strip().lower()
+        if user_input == "yes":
+            result = True
+        return result
 
     # helper method used to check if the correct arguments are provided to a function
     def check_args(self, function, args):
@@ -88,6 +95,13 @@ class PythonCodeInterpreter():
     def run_python_code_in_notebook(self, code: str, messages):
         if code.startswith('{"python_code":'):
             code = json.loads(code)["python_code"]
+
+        # Pause to review the program
+        print(f"----------\n{code}\n----------")
+        if not self.ask_continue():
+            quit()
+
+        # Run
         results, self.ipynb_file = python_code_notebook.run_all(
             code,
             messages = messages,
@@ -116,7 +130,6 @@ class PythonCodeInterpreter():
         tool_choice_flag = False
         finish_flag = False
         for i in range(max_loops):
-            print("Start ChatCompletion")
             completion = self.client.chat.completions.create(
                 model=self.deployment_name,
                 messages=self.messages,
@@ -126,7 +139,6 @@ class PythonCodeInterpreter():
                 # seed=100,
 
             )
-            print(f"End ChatCompletion. choices:{len(completion.choices)}")
             response_message = completion.choices[0].message
             response_reason = completion.choices[0].finish_reason
             response_role = response_message.role
@@ -174,7 +186,6 @@ class PythonCodeInterpreter():
                     }
                 )
                 finish_flag = True
-            print("-------------------------------------")
             if finish_flag:
                 break
         
