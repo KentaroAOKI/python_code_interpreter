@@ -17,13 +17,15 @@ class PythonCodeInterpreter():
         # self.client = OpenAI()
         self.client = AzureOpenAI()
 
+        self.system_message = True
         self.deployment_name = deployment_name
         self.current_messages_index = 1
         self.ipynb_result_dir = "results"
         self.ipynb_prefix = os.path.join(os.path.dirname(__file__), self.ipynb_result_dir, "running_")
         self.ipynb_file = ""
         self.result_file = ""
-        self.messages = [{
+        self.messages = []
+        self.messages_system = [{
             "role": "system",
             "content": (
                 f"You are interacting with {deployment_name}, a large language model trained by OpenAI. "
@@ -47,7 +49,8 @@ class PythonCodeInterpreter():
                 "type": "function",
                 "function": {
                     "name": "python",
-                    "description": "Run the Python code and get the results.",
+                    # "description": "When there is information I don't know, I run some Python code to get the results.",
+                    "description": "If some information is unknown, run Python code to get the data from outside, do calculations, etc., to get the results.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -125,6 +128,8 @@ class PythonCodeInterpreter():
         return
 
     def run_conversation(self, message):
+        if self.system_message is True:
+            self.messages.extend(self.messages_system)
         self.messages.append({"role": "user", "content": message})
         max_loops = 20
         tool_choice_flag = False
@@ -135,7 +140,7 @@ class PythonCodeInterpreter():
                 messages=self.messages,
                 tools=self.tools,
                 # tool_choice="auto" if tool_choice_flag else "none", 
-                temperature=0,
+                # temperature=0,
                 # seed=100,
 
             )
@@ -144,6 +149,7 @@ class PythonCodeInterpreter():
             response_role = response_message.role
 
             if response_reason == 'tool_calls':
+                tool_call = response_message.tool_calls[0]
                 function_name = response_message.tool_calls[0].function.name
                 function_arguments = response_message.tool_calls[0].function.arguments
 
@@ -161,17 +167,11 @@ class PythonCodeInterpreter():
                 if function_response.startswith('<Figure size'):
                     function_response = "Omitted due to the large size of the image."
 
+                self.messages.append(response_message)
                 self.messages.append(
                     {
-                        "role": response_role,
-                        "name": function_name,
-                        "content": function_arguments,
-                    }
-                )
-                self.messages.append(
-                    {
-                        "role": "function",
-                        "name": function_name,
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
                         "content": function_response,
                     }
                 )
@@ -191,9 +191,6 @@ class PythonCodeInterpreter():
         
         # write results
         result_name = f'result_{datetime.datetime.now().strftime("%Y%m%d-%H%M%S")}'
-        self.result_file = os.path.join(os.path.dirname(__file__), self.ipynb_result_dir, f'{result_name}.json')
-        with open(f'{self.result_file}', 'w') as f:
-            f.write(json.dumps(self.messages))
         current_ipynb_file = self.ipynb_file
         self.ipynb_file = os.path.join(os.path.dirname(__file__), self.ipynb_result_dir, f'{result_name}.ipynb')
         os.rename(current_ipynb_file, self.ipynb_file)
@@ -207,5 +204,6 @@ if __name__ == '__main__':
     # message = "/mnt/data/diagnosis.csv のデータが悪性か良性か判断してください。判断は、scikit-learn から取得できる load_breast_cancer データで学習したモデルを使ってください。日本語で説明してください。" # sample_04
 
     pci = PythonCodeInterpreter(deployment_name)
+    pci.system_message = True
     assistant_response = pci.run_conversation(message)
-    print(json.dumps(assistant_response))
+    print(assistant_response)
