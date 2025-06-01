@@ -48,7 +48,7 @@ class PythonCodeInterpreter():
             {
                 "type": "function",
                 "function": {
-                    "name": "python",
+                    "name": "run_python",
                     # "description": "When there is information I don't know, I run some Python code to get the results.",
                     "description": "If some information is unknown, run Python code to get the data from outside, do calculations, etc., to get the results.",
                     "parameters": {
@@ -69,7 +69,7 @@ class PythonCodeInterpreter():
             },
         ]
         self.available_functions = {
-            "python": self.run_python_code_in_notebook,
+            "run_python": self.run_python_code_in_notebook,
         } 
     
     def ask_continue(self):
@@ -113,6 +113,7 @@ class PythonCodeInterpreter():
             remove_result_ipynb=False
             )
         result = results[-1]
+        print(result)
         result_strs =  [x['text/plain'] for x in result if x.get('text/plain')]
         result_str = "\n".join(result_strs)
         return result_str
@@ -128,17 +129,20 @@ class PythonCodeInterpreter():
         return
 
     def run_conversation(self, message):
+        result_name = f'result_{datetime.datetime.now().strftime("%Y%m%d-%H%M%S")}'
         if self.system_message is True:
             self.messages.extend(self.messages_system)
         self.messages.append({"role": "user", "content": message})
-        max_loops = 20
+        max_loops = 200
         tool_choice_flag = False
         finish_flag = False
         for i in range(max_loops):
+            print(f"Loop {i+1}/{max_loops}")
             completion = self.client.chat.completions.create(
                 model=self.deployment_name,
                 messages=self.messages,
                 tools=self.tools,
+                parallel_tool_calls=False,
                 # tool_choice="auto" if tool_choice_flag else "none", 
                 # temperature=0,
                 # seed=100,
@@ -149,34 +153,32 @@ class PythonCodeInterpreter():
             response_role = response_message.role
 
             if response_reason == 'tool_calls':
-                tool_call = response_message.tool_calls[0]
-                function_name = response_message.tool_calls[0].function.name
-                function_arguments = response_message.tool_calls[0].function.arguments
+                for tool_call in response_message.tool_calls:
+                    function_name = tool_call.function.name
+                    function_arguments = tool_call.function.arguments
 
-                if function_name not in self.available_functions:
-                    return f"Function {function_name} does not exist."
+                    if function_name not in self.available_functions:
+                        return f"Function {function_name} does not exist."
 
-                function_to_call = self.available_functions[function_name]
-                if response_message.content is None:
-                    content_messages = self.messages[self.current_messages_index:]
-                else:
-                    content_messages = [response_message]
-                function_response = function_to_call(function_arguments, content_messages)
+                    function_to_call = self.available_functions[function_name]
+                    if response_message.content is None:
+                        content_messages = self.messages[self.current_messages_index:]
+                    else:
+                        content_messages = [response_message]
+                    function_response = function_to_call(function_arguments, content_messages)
 
-                # special treatment. For some reason, an error occurs when inserting a figure strings
-                if function_response.startswith('<Figure size'):
-                    function_response = "Omitted due to the large size of the image."
+                    # special treatment. For some reason, an error occurs when inserting a figure strings
+                    if function_response.startswith('<Figure size'):
+                        function_response = "Omitted due to the large size of the image."
 
-                self.messages.append(response_message)
-                self.messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": function_response,
-                    }
-                )
-
-                self.current_messages_index = len(self.messages)
+                    self.messages.append(response_message)
+                    self.messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": function_response,
+                        }
+                    )
             elif response_reason == 'stop':
                 self.write_messages_in_notebook([response_message])
                 self.messages.append(
@@ -185,16 +187,28 @@ class PythonCodeInterpreter():
                         "content": response_message.content,
                     }
                 )
-                finish_flag = True
+                print(f"Response: {response_message.content}")
+                user_input = input("Please write the message you want to send. If you want to finish the conversation, type 'exit': ").strip().lower()
+                if user_input == 'exit':
+                    finish_flag = True
+                else:
+                    self.write_messages_in_notebook([{"role": "user", "content": user_input}])
+                    self.messages.append({"role": "user", "content": user_input})
+            elif response_reason == 'length':
+                print("Response length exceeded the limit. Please try again with a shorter message.")
+            else:
+                print(f"Unexpected response reason: {response_reason}")
+            self.current_messages_index = len(self.messages)
             if finish_flag:
                 break
         
         # write results
-        result_name = f'result_{datetime.datetime.now().strftime("%Y%m%d-%H%M%S")}'
         current_ipynb_file = self.ipynb_file
         self.ipynb_file = os.path.join(os.path.dirname(__file__), self.ipynb_result_dir, f'{result_name}.ipynb')
         os.rename(current_ipynb_file, self.ipynb_file)
-
+        self.result_file = os.path.join(os.path.dirname(__file__), self.ipynb_result_dir, f'{result_name}.json')
+        with open(self.result_file, 'w') as f:
+            print(self.messages, file=f)
         return self.messages
 
 if __name__ == '__main__':
@@ -202,7 +216,8 @@ if __name__ == '__main__':
     message = "Determine whether the data in /mnt/data/diagnosis.csv is malignant or benign. To make a decision, use the model learned using the load_breast_cancer data available from scikit-learn." # sample_02
     # message = "2023年の1月から3月のNVIDIA株価をYahooから取得して、2023年4月以降の株価を予測してください。" # sample_03
     # message = "/mnt/data/diagnosis.csv のデータが悪性か良性か判断してください。判断は、scikit-learn から取得できる load_breast_cancer データで学習したモデルを使ってください。日本語で説明してください。" # sample_04
-
+    print(f"Message: {message}")
+    # Initialize the Python Code Interpreter
     pci = PythonCodeInterpreter(deployment_name)
     pci.system_message = True
     assistant_response = pci.run_conversation(message)
