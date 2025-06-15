@@ -230,9 +230,10 @@ class PythonCodeInterpreter():
 
 if __name__ == '__main__':
     # message = "Get the NVIDIA stock price from January to March 2023 from Yahoo and predict the stock price after April 2023." # sample_01
-    message = "Determine whether the data in ./sample_data/diagnosis.csv is malignant or benign. To make a decision, use the model learned using the load_breast_cancer data available from scikit-learn." # sample_02
+    # message = "Determine whether the data in ./sample_data/diagnosis.csv is malignant or benign. To make a decision, use the model learned using the load_breast_cancer data available from scikit-learn." # sample_02
     # message = "2023年の1月から3月のNVIDIA株価をYahooから取得して、2023年4月以降の株価を予測してください。" # sample_03
-    # message = "./sample_data/diagnosis.csv のデータが悪性か良性か判断してください。判断は、scikit-learn から取得できる load_breast_cancer データで学習したモデルを使ってください。日本語で説明してください。" # sample_04
+    message = "./sample_data/diagnosis.csv のデータが悪性か良性か判断してください。判断は、scikit-learn から取得できる load_breast_cancer データで学習したモデルを使ってください。日本語で説明してください。" # sample_04
+    # message = "./sample_data/chinook.db のsqlite3データベースから、最も多くのトラックを持つアルバムの名前を調べてください。"
     print(f"Message: {message}")
     # Initialize the Python Code Interpreter
     pci = PythonCodeInterpreter(deployment_name)
