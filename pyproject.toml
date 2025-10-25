@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pycodei"
+version = "0.1.1"
+description = "An interactive Python code interpreter designed to collaborate with OpenAI and Azure AI models."
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+  {name = "Kentaro Aoki"}
+]
+dependencies = [
+  "anyio",
+  "ipykernel",
+  "jupyter",
+  "matplotlib",
+  "mcp",
+  "nbformat",
+  "numpy",
+  "openai",
+  "pandas",
+  "papermill==2.6.0",
+  "python-dotenv",
+  "requests",
+  "scikit-learn",
+  "seaborn",
+]
+
+[project.urls]
+Homepage = "https://github.com/KentaroAOKI/python_code_interpreter"
+
+[project.scripts]
+pycodei = "python_code_interpreter:main"
+
+[tool.setuptools]
+py-modules = [
+  "mcp_client_manager",
+  "python_code_interpreter",
+  "python_code_notebook",
+]
+
+[tool.setuptools.packages.find]
+include = ["papermill_enhancement*"]

@@ -1,0 +1,8 @@
+*.egg-info/
+results/
+data/
+__pycache__/
+*.pyc
+.python-version
+.vscode/
+dist/
