@@ -1,5 +1,7 @@
+anyio
 ipykernel
 jupyter
+mcp
 nbformat
 openai
 python-dotenv

@@ -13,9 +13,11 @@ authors = [
   {name = "Kentaro Aoki"}
 ]
 dependencies = [
+  "anyio",
   "ipykernel",
   "jupyter",
   "matplotlib",
+  "mcp",
   "nbformat",
   "numpy",
   "openai",
@@ -35,6 +37,7 @@ pycodei = "python_code_interpreter:main"
 
 [tool.setuptools]
 py-modules = [
+  "mcp_client_manager",
   "python_code_interpreter",
   "python_code_notebook",
 ]

@@ -93,13 +93,57 @@ Runtime credentials are read from `~/.pycodei/config.json`. Example:
   "AZURE_OPENAI_API_KEY": "<your azure openai api key>",
   "AZURE_OPENAI_ENDPOINT": "https://<your endpoint>.openai.azure.com/",
   "OPENAI_API_VERSION": "2024-10-01-preview",
-  "OPENAI_API_KEY": "<your openai api key>"
+  "OPENAI_API_KEY": "<your openai api key>",
+  "mcpServers": {
+    "filesystem": {
+      "disabled": true,
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/path/to/share"
+      ],
+      "env": {
+        "FS_ROOT": "/path/to/share"
+      }
+    }
+  }
 }
 ```
 Set `"PYCODEI_CLIENT"` to `azure` (default) or `openai` to choose which SDK client the interpreter instantiates; you can temporarily override it with the `PYCODEI_CLIENT` environment variable. All other keys map directly to the environment variables expected by the OpenAI/Azure SDKs. Leaving a value blank may cause authentication failures, so be sure to populate the entries relevant to your deployment.
 
 ### Optional: PYCODEI.md
 If you keep a `PYCODEI.md` file, its contents are appended to the system prompt every time `pycodei` starts. Place the file in one of these locations (checked in order): `~/.pycodei/PYCODEI.md`, the directory where the package is installed (alongside `python_code_interpreter.py`), or your current working directory. Use it for persistent guardrails, safety rules, or project-specific requirements.
+
+### Optional: MCP servers
+`pycodei` can now connect to multiple [Model Context Protocol](https://modelcontextprotocol.io/) servers using the same schema. Add them under the `"mcpServers"` key in `~/.pycodei/config.json` and set `"disabled": false` for the entries you want to enable. Example:
+
+```json
+"mcpServers": {
+  "filesystem": {
+    "disabled": false,
+    "command": "npx",
+    "args": [
+      "-y",
+      "@modelcontextprotocol/server-filesystem",
+      "/Users/me/workspace"
+    ],
+    "env": {
+      "FS_ROOT": "/Users/me/workspace"
+    }
+  },
+  "custom_tool": {
+    "command": "/usr/local/bin/python",
+    "args": [
+      "/path/to/server.py"
+    ],
+    "cwd": "/path/to",
+    "transport": "stdio"
+  }
+}
+```
+
+When `pycodei` starts it will spin up each enabled server, discover its MCP tools, and register them as callable functions. Tool names are derived from `server_name__tool_name` and become available to the model alongside the built-in `run_python` tool. SSE (`transport: "sse"`) and WebSocket (`transport: "websocket"`) endpoints are also supported if you prefer remote servers—specify a `url` instead of a `command`.
 
 
 ## License

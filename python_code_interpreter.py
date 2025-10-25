@@ -14,6 +14,7 @@ from openai.types.chat import completion_create_params
 import openai._utils._transform
 
 import python_code_notebook
+from mcp_client_manager import MCPClientManager
 
 DEFAULT_CONFIG_DIR = Path.home() / ".pycodei"
 CONFIG_DIR = Path(os.environ.get("PYCODEI_CONFIG_DIR", DEFAULT_CONFIG_DIR))
@@ -26,6 +27,7 @@ DEFAULT_CONFIG = {
     "AZURE_OPENAI_ENDPOINT": "https://<your-endpoint>.openai.azure.com/",
     "OPENAI_API_VERSION": "2024-10-01-preview",
     "OPENAI_API_KEY": "",
+    "mcpServers": {},
 }
 
 
@@ -56,6 +58,8 @@ def load_user_config():
 def apply_config_to_env(config_data):
     for key, value in config_data.items():
         if value is None:
+            continue
+        if isinstance(value, (dict, list)):
             continue
         os.environ[key] = str(value)
 
@@ -89,6 +93,7 @@ def load_pycodei_guide():
 
 CONFIG = initialize_configuration()
 deployment_name = os.getenv("DEPLOYMENT_NAME")
+MCP_MANAGER = MCPClientManager(CONFIG.get("mcpServers"), base_dir=CONFIG_DIR)
 
 
 def resolve_client_provider():
@@ -200,6 +205,11 @@ class PythonCodeInterpreter():
         self.available_functions = {
             "run_python": self.run_python_code_in_notebook,
         } 
+
+        mcp_tools, mcp_function_map = MCP_MANAGER.get_openai_tools()
+        if mcp_tools:
+            self.tools.extend(mcp_tools)
+            self.available_functions.update(mcp_function_map)
     
     def ask_continue(self):
         result = False
@@ -316,6 +326,7 @@ class PythonCodeInterpreter():
                             "content": function_response,
                         }
                     )
+                    print(f"Function '{function_name}' function_arguments: {function_arguments}, content_messages: {content_messages}, function_response: {function_response}")
             elif response_reason == 'stop':
                 self.write_messages_in_notebook([response_message])
                 self.messages.append(
