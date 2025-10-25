@@ -17,6 +17,7 @@ import python_code_notebook
 DEFAULT_CONFIG_DIR = Path.home() / ".pycodei"
 CONFIG_DIR = Path(os.environ.get("PYCODEI_CONFIG_DIR", DEFAULT_CONFIG_DIR))
 CONFIG_PATH = CONFIG_DIR / "config.json"
+GUIDE_FILENAME = "PYCODEI.md"
 DEFAULT_CONFIG = {
     "DEPLOYMENT_NAME": "gpt-4o-mini",
     "AZURE_OPENAI_API_KEY": "",
@@ -66,6 +67,24 @@ def initialize_configuration():
     return config_data
 
 
+def load_pycodei_guide():
+    search_paths = [
+        Path.cwd() / GUIDE_FILENAME,
+        CONFIG_DIR / GUIDE_FILENAME,
+        Path(__file__).resolve().parent / GUIDE_FILENAME,
+    ]
+    for path in search_paths:
+        if not path.exists():
+            continue
+        try:
+            content = path.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if content:
+            return content
+    return ""
+
+
 CONFIG = initialize_configuration()
 deployment_name = os.getenv("DEPLOYMENT_NAME")
 
@@ -77,31 +96,38 @@ class PythonCodeInterpreter():
 
         self.system_message = True
         self.deployment_name = deployment_name
-        self.persistent_data_dir = os.path.join(os.getcwd(), "data")
+        self.persistent_data_dir = os.path.join(os.getcwd(), "ai_workspace")
         self.current_messages_index = 1
         self.ipynb_result_dir = "results"
         self.ipynb_prefix = os.path.join(os.getcwd(), self.ipynb_result_dir, "running_")
         self.ipynb_file = ""
         self.result_file = ""
         self.messages = []
+        base_system_content = (
+            f"You are interacting with {self.deployment_name}, a large language model. "
+            "The model is based on ReAct technology and uses Python for data analysis and visualization.\n"
+            "When a message containing Python code is sent to Python, it is executed in the state-preserving "
+            "Jupyter notebook environment. Python returns the results of the execution. "
+            f"'{self.persistent_data_dir}' drive can be used to store and persist user files.\n"
+            "Python is used to analyze, visualize, and predict the data. If you provide a data set, "
+            "we will analyze it and create appropriate graphs for visualization. Additionally, "
+            "we can extract trends from the data and provide future projections.\n"
+            "We can also provide information on a wide range of scientific topics, "
+            "including natural language processing (NLP), machine learning, mathematics, physics, chemistry, "
+            "and biology. Let us know what questions you have, what your research needs are, or what problems "
+            "you need solved.\n"
+            "When a user hands you a file, first understand the type of data you are dealing with, its structure "
+            "and characteristics, and tell me its contents. Use clear text and sometimes diagrams.\n"
+        )
+        pycodei_guide = load_pycodei_guide()
+        if pycodei_guide:
+            base_system_content = (
+                f"{base_system_content}\nAdditional instructions from {GUIDE_FILENAME}:\n{pycodei_guide}\n"
+            )
+
         self.messages_system = [{
             "role": "system",
-            "content": (
-                f"You are interacting with {self.deployment_name}, a large language model. "
-                "The model is based on ReAct technology and uses Python for data analysis and visualization.\n"
-                "When a message containing Python code is sent to Python, it is executed in the state-preserving "
-                "Jupyter notebook environment. Python returns the results of the execution. "
-                f"'{self.persistent_data_dir}' drive can be used to store and persist user files.\n"
-                "Python is used to analyze, visualize, and predict the data. If you provide a data set, "
-                "we will analyze it and create appropriate graphs for visualization. Additionally, "
-                "we can extract trends from the data and provide future projections.\n"
-                "We can also provide information on a wide range of scientific topics, "
-                "including natural language processing (NLP), machine learning, mathematics, physics, chemistry, "
-                "and biology. Let us know what questions you have, what your research needs are, or what problems "
-                "you need solved.\n"
-                "When a user hands you a file, first understand the type of data you are dealing with, its structure "
-                "and characteristics, and tell me its contents. Use clear text and sometimes diagrams.\n"
-            )
+            "content": base_system_content
         }]
         self.tools = [
             {

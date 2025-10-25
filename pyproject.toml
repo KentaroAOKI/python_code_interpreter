@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pycodei"
 version = "0.1.0"
-description = "Interactive Python code interpreter that collaborates with OpenAI/Azure LLMs."
+description = "An interactive Python code interpreter designed to collaborate with OpenAI and Azure AI models."
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}
@@ -37,7 +37,6 @@ pycodei = "python_code_interpreter:main"
 py-modules = [
   "python_code_interpreter",
   "python_code_notebook",
-  "set_matplotlib_japanese_font",
 ]
 
 [tool.setuptools.packages.find]

@@ -93,6 +93,9 @@ Runtime credentials are read from `~/.pycodei/config.json`. Example:
 ```
 All keys map directly to the environment variables expected by the OpenAI/Azure SDKs. Leaving a value blank may cause authentication failures, so be sure to populate the entries relevant to your deployment.
 
+### Optional: PYCODEI.md
+If you keep a `PYCODEI.md` file, its contents are appended to the system prompt every time `pycodei` starts. Place the file in one of these locations (checked in order): `~/.pycodei/PYCODEI.md`, the directory where the package is installed (alongside `python_code_interpreter.py`), or your current working directory. Use it for persistent guardrails, safety rules, or project-specific requirements.
+
 
 ## License
 
