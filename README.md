@@ -17,9 +17,9 @@ This project provides a Python code interpreter that interacts with large langua
     cd python_code_interpreter
     ```
 
-2. Install the required dependencies:
+2. Install the package locally (registers the `pycodei` command and all dependencies):
     ```bash
-    pip install -r requirements.txt
+    pip install -e .
     ```
 
 3. Create your user configuration file:
@@ -42,25 +42,18 @@ This project provides a Python code interpreter that interacts with large langua
     ```
 
 ## Usage
-To use the Python Code Interpreter, run the following command:
+To use the Python Code Interpreter, run the following command (replace the prompt text with your task):
 ```bash
-python python_code_interpreter.py
+pycodei "Retrieve NVIDIA stock prices from Jan-Mar 2023 and predict April onward."
 ```
-If you are using OpenAI, please modify the following part of python_code_interpreter.py.
-
-```python
-self.client = OpenAI()
-# self.client = AzureOpenAI()
-```
+Use `pycodei --help` to see optional flags such as `--deployment-name`, which overrides the value in `~/.pycodei/config.json`.
 
 ### Example
-Please change the bottom part of python_code_interpreter.py and enter your analysis content.
+You can also start without an inline prompt; the CLI will ask for one interactively:
 
-```python
-message = "Retrieve NVIDIA stock prices from Yahoo for January to March 2023 and predict prices from April 2023 onwards."
-pci = PythonCodeInterpreter(deployment_name)
-assistant_response = pci.run_conversation(message)
-print(json.dumps(assistant_response))
+```bash
+# Start CLI and respond to the input prompt
+pycodei
 ```
 A notebook file with the execution date and time is created in the results directory. You can view it with Visual Studio Code's Jupyter extension.
 
