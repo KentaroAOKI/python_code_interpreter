@@ -1,4 +1,4 @@
-# Python Code Interpreter
+# PyCodeI (Python Code Interpreter)
 
 This project provides a Python code interpreter that interacts with large language models trained by OpenAI. This interpreter is designed to run Python code in a notebook environment, enabling data analysis, visualization, and prediction. The Python code runs interactively, but in the notebook from the beginning each time.
 
@@ -11,13 +11,20 @@ This project provides a Python code interpreter that interacts with large langua
 
 ## Installation
 
+### Quick start (PyPI)
+```bash
+pip install pycodei
+```
+This installs the published package and exposes the `pycodei` CLI on your PATH.
+
+### Local development workflow
 1. Clone the repository:
     ```bash
     git clone https://github.com/KentaroAOKI/python_code_interpreter.git
     cd python_code_interpreter
     ```
 
-2. Install the package locally (registers the `pycodei` command and all dependencies):
+2. Install in editable mode (also registers the CLI):
     ```bash
     pip install -e .
     ```
@@ -28,6 +35,7 @@ This project provides a Python code interpreter that interacts with large langua
     cat > ~/.pycodei/config.json <<'EOF'
     {
       "DEPLOYMENT_NAME": "gpt-4o-mini",
+      "PYCODEI_CLIENT": "azure",
       "AZURE_OPENAI_API_KEY": "<your azure openai api key>",
       "AZURE_OPENAI_ENDPOINT": "https://<your endpoint>.openai.azure.com/",
       "OPENAI_API_VERSION": "2024-10-01-preview",
@@ -36,10 +44,6 @@ This project provides a Python code interpreter that interacts with large langua
     EOF
     ```
     Running `pycodei --help` will also create this file with placeholder values if it does not exist.
-4. Set up data directory:
-    ```bash
-    sudo ln -s `pwd`/sample_data /mnt/data
-    ```
 
 ## Usage
 To use the Python Code Interpreter, run the following command (replace the prompt text with your task):
@@ -85,13 +89,14 @@ Runtime credentials are read from `~/.pycodei/config.json`. Example:
 ```json
 {
   "DEPLOYMENT_NAME": "gpt-4o-mini",
+  "PYCODEI_CLIENT": "azure",
   "AZURE_OPENAI_API_KEY": "<your azure openai api key>",
   "AZURE_OPENAI_ENDPOINT": "https://<your endpoint>.openai.azure.com/",
   "OPENAI_API_VERSION": "2024-10-01-preview",
   "OPENAI_API_KEY": "<your openai api key>"
 }
 ```
-All keys map directly to the environment variables expected by the OpenAI/Azure SDKs. Leaving a value blank may cause authentication failures, so be sure to populate the entries relevant to your deployment.
+Set `"PYCODEI_CLIENT"` to `azure` (default) or `openai` to choose which SDK client the interpreter instantiates; you can temporarily override it with the `PYCODEI_CLIENT` environment variable. All other keys map directly to the environment variables expected by the OpenAI/Azure SDKs. Leaving a value blank may cause authentication failures, so be sure to populate the entries relevant to your deployment.
 
 ### Optional: PYCODEI.md
 If you keep a `PYCODEI.md` file, its contents are appended to the system prompt every time `pycodei` starts. Place the file in one of these locations (checked in order): `~/.pycodei/PYCODEI.md`, the directory where the package is installed (alongside `python_code_interpreter.py`), or your current working directory. Use it for persistent guardrails, safety rules, or project-specific requirements.

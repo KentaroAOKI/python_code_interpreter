@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-Core orchestration lives in `python_code_interpreter.py`, which coordinates OpenAI/Azure responses and streams code into `python_code_notebook.py` (Papermill + Jupyter helper). Support scripts include `set_matplotlib_japanese_font.py` for locale-safe plots and `papermill_enhancement/` for future kernels tweaks. Reference data is under `sample_data/` (for example, `diagnosis.csv`), while generated notebooks and JSON transcripts land in `sample_results/` or the runtime `results/` folder. Dependency locks are in `requirements.txt`, user-specific credentials reside in `~/.pycodei/config.json`, and optional guardrails live in `PYCODEI.md` (looked up in the config dir, install dir, or current workspace).
+Core orchestration lives in `python_code_interpreter.py`, which coordinates OpenAI/Azure responses and streams code into `python_code_notebook.py` (Papermill + Jupyter helper). Support scripts include `set_matplotlib_japanese_font.py` for locale-safe plots and `papermill_enhancement/` for future kernels tweaks. Reference data is under `sample_data/` (for example, `diagnosis.csv`), while generated notebooks and JSON transcripts land in `sample_results/` or the runtime `results/` folder. Dependency locks are in `requirements.txt`, user-specific credentials (including `PYCODEI_CLIENT` for OpenAI vs Azure selection) live in `~/.pycodei/config.json`, and optional guardrails live in `PYCODEI.md` (looked up in the config dir, install dir, or current workspace).
 
 ## Build, Test, and Development Commands
 Install or refresh dependencies and user config before running:

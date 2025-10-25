@@ -20,6 +20,7 @@ CONFIG_PATH = CONFIG_DIR / "config.json"
 GUIDE_FILENAME = "PYCODEI.md"
 DEFAULT_CONFIG = {
     "DEPLOYMENT_NAME": "gpt-4o-mini",
+    "PYCODEI_CLIENT": "azure",
     "AZURE_OPENAI_API_KEY": "",
     "AZURE_OPENAI_ENDPOINT": "https://<your-endpoint>.openai.azure.com/",
     "OPENAI_API_VERSION": "2024-10-01-preview",
@@ -88,11 +89,31 @@ def load_pycodei_guide():
 CONFIG = initialize_configuration()
 deployment_name = os.getenv("DEPLOYMENT_NAME")
 
+
+def resolve_client_provider():
+    provider = (
+        os.getenv("PYCODEI_CLIENT")
+        or CONFIG.get("PYCODEI_CLIENT")
+        or DEFAULT_CONFIG["PYCODEI_CLIENT"]
+    )
+    return provider.strip().lower()
+
+
+def create_llm_client():
+    provider = resolve_client_provider()
+    if provider == "azure":
+        return AzureOpenAI()
+    if provider == "openai":
+        return OpenAI()
+    raise SystemExit(
+        f"Unsupported PYCODEI_CLIENT '{provider}'. Supported values are 'azure' or 'openai'."
+    )
+
 class PythonCodeInterpreter():
     def __init__(self, deployment_name: str):
 
-        # self.client = OpenAI()
-        self.client = AzureOpenAI()
+        self.client_provider = resolve_client_provider()
+        self.client = create_llm_client()
 
         self.system_message = True
         self.deployment_name = deployment_name
