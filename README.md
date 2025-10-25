@@ -22,11 +22,20 @@ This project provides a Python code interpreter that interacts with large langua
     pip install -r requirements.txt
     ```
 
-3. Set up environment variables:
+3. Create your user configuration file:
     ```bash
-    cp .env.example .env
-    # Edit the .env file to include your deployment name and other necessary configurations
+    mkdir -p ~/.pycodei
+    cat > ~/.pycodei/config.json <<'EOF'
+    {
+      "DEPLOYMENT_NAME": "gpt-4o-mini",
+      "AZURE_OPENAI_API_KEY": "<your azure openai api key>",
+      "AZURE_OPENAI_ENDPOINT": "https://<your endpoint>.openai.azure.com/",
+      "OPENAI_API_VERSION": "2024-10-01-preview",
+      "OPENAI_API_KEY": "<your openai api key>"
+    }
+    EOF
     ```
+    Running `pycodei --help` will also create this file with placeholder values if it does not exist.
 4. Set up data directory:
     ```bash
     sudo ln -s `pwd`/sample_data /mnt/data
@@ -77,20 +86,19 @@ Result: [sample_03.ipynb](https://github.com/KentaroAOKI/python_code_interpreter
 "/mnt/data/diagnosis.csv のデータが悪性か良性か判断してください。判断は、scikit-learn から取得できる load_breast_cancer データで学習したモデルを使ってください。日本語で説明してください。"  
 Result: [sample_04.ipynb](https://github.com/KentaroAOKI/python_code_interpreter/blob/main/sample_results/sample_04.ipynb)
 
-## Environment Variables
-Set environment variables in .env file.
+## Configuration
+Runtime credentials are read from `~/.pycodei/config.json`. Example:
 
-```sh:.env
-DEPLOYMENT_NAME='gpt-4o-mini'
-
-# Azure OpenAI
-AZURE_OPENAI_API_KEY='<your azure openai api key>'
-AZURE_OPENAI_ENDPOINT='https://<your endpoint>.openai.azure.com/'
-OPENAI_API_VERSION='2024-10-01-preview'
-
-# OpenAI
-OPENAI_API_KEY='<your openai api key>'
+```json
+{
+  "DEPLOYMENT_NAME": "gpt-4o-mini",
+  "AZURE_OPENAI_API_KEY": "<your azure openai api key>",
+  "AZURE_OPENAI_ENDPOINT": "https://<your endpoint>.openai.azure.com/",
+  "OPENAI_API_VERSION": "2024-10-01-preview",
+  "OPENAI_API_KEY": "<your openai api key>"
+}
 ```
+All keys map directly to the environment variables expected by the OpenAI/Azure SDKs. Leaving a value blank may cause authentication failures, so be sure to populate the entries relevant to your deployment.
 
 
 ## License

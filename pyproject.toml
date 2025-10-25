@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "python-code-interpreter"
+version = "0.1.0"
+description = "Interactive Python code interpreter that collaborates with OpenAI/Azure LLMs."
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+  {name = "Kentaro Aoki"}
+]
+dependencies = [
+  "ipykernel",
+  "jupyter",
+  "matplotlib",
+  "nbformat",
+  "numpy",
+  "openai",
+  "pandas",
+  "papermill==2.6.0",
+  "python-dotenv",
+  "requests",
+  "scikit-learn",
+  "seaborn",
+]
+
+[project.urls]
+Homepage = "https://github.com/KentaroAOKI/python_code_interpreter"
+
+[project.scripts]
+pycodei = "python_code_interpreter:main"
+
+[tool.setuptools]
+py-modules = [
+  "python_code_interpreter",
+  "python_code_notebook",
+  "set_matplotlib_japanese_font",
+]
+
+[tool.setuptools.packages.find]
+include = ["papermill_enhancement*"]

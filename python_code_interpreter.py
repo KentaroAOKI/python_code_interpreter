@@ -1,17 +1,72 @@
-from dotenv import load_dotenv
-from openai import OpenAI
-from openai import AzureOpenAI
-import openai._utils._transform
-from openai.types.chat import completion_create_params
-import json
-import os
+import argparse
 import datetime
 import inspect
+import json
+import os
 import re
+from pathlib import Path
+
+from openai import AzureOpenAI
+from openai import OpenAI
+from openai.types.chat import completion_create_params
+
+import openai._utils._transform
 
 import python_code_notebook
 
-load_dotenv()
+DEFAULT_CONFIG_DIR = Path.home() / ".pycodei"
+CONFIG_DIR = Path(os.environ.get("PYCODEI_CONFIG_DIR", DEFAULT_CONFIG_DIR))
+CONFIG_PATH = CONFIG_DIR / "config.json"
+DEFAULT_CONFIG = {
+    "DEPLOYMENT_NAME": "gpt-4o-mini",
+    "AZURE_OPENAI_API_KEY": "",
+    "AZURE_OPENAI_ENDPOINT": "https://<your-endpoint>.openai.azure.com/",
+    "OPENAI_API_VERSION": "2024-10-01-preview",
+    "OPENAI_API_KEY": "",
+}
+
+
+def load_user_config():
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    if not CONFIG_PATH.exists():
+        CONFIG_PATH.write_text(json.dumps(DEFAULT_CONFIG, indent=2), encoding="utf-8")
+        raise RuntimeError(
+            f"Created a config template at {CONFIG_PATH}. "
+            "Update it with your deployment name and API credentials."
+        )
+
+    try:
+        with CONFIG_PATH.open("r", encoding="utf-8") as f:
+            config_data = json.load(f)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Invalid JSON in {CONFIG_PATH}: {exc}") from exc
+
+    if not isinstance(config_data, dict):
+        raise RuntimeError(f"{CONFIG_PATH} must contain a JSON object of key/value pairs.")
+
+    if not config_data.get("DEPLOYMENT_NAME"):
+        raise RuntimeError(f"'DEPLOYMENT_NAME' is missing in {CONFIG_PATH}.")
+
+    return config_data
+
+
+def apply_config_to_env(config_data):
+    for key, value in config_data.items():
+        if value is None:
+            continue
+        os.environ[key] = str(value)
+
+
+def initialize_configuration():
+    try:
+        config_data = load_user_config()
+    except RuntimeError as exc:
+        raise SystemExit(exc) from exc
+    apply_config_to_env(config_data)
+    return config_data
+
+
+CONFIG = initialize_configuration()
 deployment_name = os.getenv("DEPLOYMENT_NAME")
 
 class PythonCodeInterpreter():
@@ -22,10 +77,10 @@ class PythonCodeInterpreter():
 
         self.system_message = True
         self.deployment_name = deployment_name
-        self.persistent_data_dir = os.path.join(os.path.dirname(__file__), "data")
+        self.persistent_data_dir = os.path.join(os.getcwd(), "data")
         self.current_messages_index = 1
         self.ipynb_result_dir = "results"
-        self.ipynb_prefix = os.path.join(os.path.dirname(__file__), self.ipynb_result_dir, "running_")
+        self.ipynb_prefix = os.path.join(os.getcwd(), self.ipynb_result_dir, "running_")
         self.ipynb_file = ""
         self.result_file = ""
         self.messages = []
@@ -216,9 +271,9 @@ class PythonCodeInterpreter():
         
         # write results
         current_ipynb_file = self.ipynb_file
-        self.ipynb_file = os.path.join(os.path.dirname(__file__), self.ipynb_result_dir, f'{result_name}.ipynb')
+        self.ipynb_file = os.path.join(os.getcwd(), self.ipynb_result_dir, f'{result_name}.ipynb')
         os.rename(current_ipynb_file, self.ipynb_file)
-        self.result_file = os.path.join(os.path.dirname(__file__), self.ipynb_result_dir, f'{result_name}.json')
+        self.result_file = os.path.join(os.getcwd(), self.ipynb_result_dir, f'{result_name}.json')
         with open(self.result_file, 'w', encoding='utf-8') as f:
             request_body = openai._utils._transform.maybe_transform({
                 "messages": self.messages,
@@ -228,15 +283,45 @@ class PythonCodeInterpreter():
             json.dump(request_body, f, ensure_ascii=False)
         return self.messages
 
-if __name__ == '__main__':
-    # message = "Get the NVIDIA stock price from January to March 2023 from Yahoo and predict the stock price after April 2023." # sample_01
-    # message = "Determine whether the data in ./sample_data/diagnosis.csv is malignant or benign. To make a decision, use the model learned using the load_breast_cancer data available from scikit-learn." # sample_02
-    # message = "2023年の1月から3月のNVIDIA株価をYahooから取得して、2023年4月以降の株価を予測してください。" # sample_03
-    message = "./sample_data/diagnosis.csv のデータが悪性か良性か判断してください。判断は、scikit-learn から取得できる load_breast_cancer データで学習したモデルを使ってください。日本語で説明してください。" # sample_04
-    # message = "./sample_data/chinook.db のsqlite3データベースから、最も多くのトラックを持つアルバムの名前を調べてください。"
-    print(f"Message: {message}")
-    # Initialize the Python Code Interpreter
-    pci = PythonCodeInterpreter(deployment_name)
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Run the Python Code Interpreter conversation loop."
+    )
+    parser.add_argument(
+        "message",
+        nargs="?",
+        help="Initial instruction sent to the interpreter. If omitted, you will be prompted."
+    )
+    parser.add_argument(
+        "--deployment-name",
+        dest="deployment_name",
+        default=None,
+        help="Override the DEPLOYMENT_NAME environment variable."
+    )
+    args = parser.parse_args(argv)
+
+    resolved_deployment = args.deployment_name or os.getenv("DEPLOYMENT_NAME")
+    if not resolved_deployment:
+        parser.error("DEPLOYMENT_NAME is not set. Export it or pass --deployment-name.")
+
+    message = args.message
+    if not message:
+        try:
+            message = input("Enter the initial message for the interpreter: ").strip()
+        except KeyboardInterrupt:
+            print("\nAborted.")
+            return 1
+
+    if not message:
+        print("No message provided. Exiting.")
+        return 1
+
+    pci = PythonCodeInterpreter(resolved_deployment)
     pci.system_message = True
     assistant_response = pci.run_conversation(message)
     print(assistant_response)
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
