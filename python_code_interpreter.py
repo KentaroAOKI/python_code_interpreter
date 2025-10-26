@@ -6,6 +6,7 @@ import os
 import re
 from pathlib import Path
 import textwrap
+from colorama import init, Fore, Style
 
 from openai import AzureOpenAI
 from openai import OpenAI
@@ -130,6 +131,9 @@ class PythonCodeInterpreter():
         self.ipynb_file = ""
         self.result_file = ""
         self.messages = []
+        self.tool_auto_permissions = {}
+        self.tool_function_auto_permissions = set()
+        self.tool_descriptions = {}
         # base_system_content = textwrap.dedent(f"""
         #     You are interacting with {self.deployment_name}, a large language model.
         #     The model is based on ReAct technology and uses Python for data analysis and visualization.
@@ -202,6 +206,7 @@ class PythonCodeInterpreter():
                 }
             },
         ]
+        self._register_tool_descriptions(self.tools)
         self.available_functions = {
             "run_python": self.run_python_code_in_notebook,
         } 
@@ -210,6 +215,7 @@ class PythonCodeInterpreter():
         if mcp_tools:
             self.tools.extend(mcp_tools)
             self.available_functions.update(mcp_function_map)
+            self._register_tool_descriptions(mcp_tools)
     
     def ask_continue(self):
         result = False
@@ -217,6 +223,74 @@ class PythonCodeInterpreter():
         if user_input == "yes":
             result = True
         return result
+
+    def _register_tool_descriptions(self, tools):
+        for tool in tools:
+            if tool.get("type") != "function":
+                continue
+            function_info = tool.get("function") or {}
+            name = function_info.get("name")
+            description = function_info.get("description")
+            if name:
+                self.tool_descriptions[name] = description or ""
+
+    def _show_tool_request_details(self, function_name, function_arguments):
+        description = self.tool_descriptions.get(function_name, "")
+        formatted_args = self._format_tool_arguments(function_arguments)
+        print("------")
+        print(Fore.GREEN + "A tool execution was requested:")
+        print(Fore.GREEN + (f"Function : {function_name}"))
+        if description:
+            print(Fore.GREEN + (f"Description : {description}"))
+        print(Fore.GREEN + "Arguments:")
+        print(Fore.GREEN + formatted_args.replace("\\n", "\n"))
+
+    def _format_tool_arguments(self, raw_args):
+        if raw_args is None:
+            return "(no arguments)"
+        if isinstance(raw_args, str):
+            stripped = raw_args.strip()
+            if not stripped:
+                return "(empty string)"
+            try:
+                parsed = json.loads(stripped)
+            except json.JSONDecodeError:
+                return raw_args
+            return json.dumps(parsed, indent=2, ensure_ascii=False)
+        return str(raw_args)
+
+    def _tool_approval_key(self, function_name, raw_args):
+        normalized_args = ""
+        if raw_args is not None:
+            if isinstance(raw_args, str):
+                stripped = raw_args.strip()
+                try:
+                    parsed = json.loads(stripped)
+                except json.JSONDecodeError:
+                    normalized_args = stripped
+                else:
+                    normalized_args = json.dumps(parsed, sort_keys=True, separators=(",", ":"))
+            else:
+                normalized_args = str(raw_args)
+        return f"{function_name}:{normalized_args}"
+
+    def _prompt_tool_execution(self, function_name, function_arguments):
+        self._show_tool_request_details(function_name, function_arguments)
+        print(
+            "Options: [y] allow once / [a] always allow this function (with args) / "
+            "[f] always allow this function / [n] deny"
+        )
+        while True:
+            decision = input("Enter your choice (y/a/f/n): ").strip().lower()
+            if decision in ("y", "yes"):
+                return "allow"
+            if decision in ("a", "always_function+args"):
+                return "always_function+args"
+            if decision in ("f", "always_function"):
+                return "always_function"
+            if decision in ("n", "no"):
+                return "deny"
+            print("Invalid choice. Please respond with 'y', 'a', 'f', or 'n'.")
 
     # helper method used to check if the correct arguments are provided to a function
     def check_args(self, function, args):
@@ -240,9 +314,9 @@ class PythonCodeInterpreter():
             code = json.loads(code)["python_code"]
 
         # Pause to review the program
-        print(f"----------\n{code}\n----------")
-        if not self.ask_continue():
-            quit()
+        # print(f"----------\n{code}\n----------")
+        # if not self.ask_continue():
+        #     quit()
 
         # Run
         results, self.ipynb_file = python_code_notebook.run_all(
@@ -253,7 +327,7 @@ class PythonCodeInterpreter():
             remove_result_ipynb=False
             )
         result = results[-1]
-        print(result)
+        # print(result)
         result_strs =  [x['text/plain'] for x in result if x.get('text/plain')]
         result_str = "\n".join(result_strs)
         return result_str
@@ -312,7 +386,31 @@ class PythonCodeInterpreter():
                         content_messages = self.messages[self.current_messages_index:]
                     else:
                         content_messages = [response_message]
-                    function_response = function_to_call(function_arguments, content_messages)
+                    
+                    # Handle tool execution approval
+                    approval_key = self._tool_approval_key(function_name, function_arguments)
+                    should_execute = True
+                    auto_permission_type = None
+                    if function_name in self.tool_function_auto_permissions:
+                        auto_permission_type = "function"
+                    elif approval_key in self.tool_auto_permissions:
+                        auto_permission_type = "function+args"
+
+                    if auto_permission_type:
+                        self._show_tool_request_details(function_name, function_arguments)
+                        print(f"Auto-approved tool call '{function_name}' ({auto_permission_type}-level).")
+                    else:
+                        decision = self._prompt_tool_execution(function_name, function_arguments)
+                        if decision == "deny":
+                            should_execute = False
+                        elif decision == "always_function+args":
+                            self.tool_auto_permissions[approval_key] = True
+                        elif decision == "always_function":
+                            self.tool_function_auto_permissions.add(function_name)
+                    if should_execute:
+                        function_response = function_to_call(function_arguments, content_messages)
+                    else:
+                        function_response = "Tool execution was skipped because you denied the request."
 
                     # special treatment. For some reason, an error occurs when inserting a figure strings
                     # if function_response.startswith('<Figure size'):
@@ -326,7 +424,7 @@ class PythonCodeInterpreter():
                             "content": function_response,
                         }
                     )
-                    print(f"Function '{function_name}' function_arguments: {function_arguments}, content_messages: {content_messages}, function_response: {function_response}")
+                    print(f"------\n{Fore.YELLOW}Function: '{function_name}'\nResponse:\n\t{function_response.replace('\\n', '\n\t')}")
             elif response_reason == 'stop':
                 self.write_messages_in_notebook([response_message])
                 self.messages.append(
@@ -335,8 +433,8 @@ class PythonCodeInterpreter():
                         "content": response_message.content,
                     }
                 )
-                print(f"Response: {response_message.content}")
-                user_input = input("Please write the message you want to send. If you want to finish the conversation, type 'exit': ").strip().lower()
+                print(f"------\nResponse: {response_message.content}")
+                user_input = input("Chat here. 'exit' to leave: ").strip().lower()
                 if user_input == 'exit':
                     finish_flag = True
                 else:
@@ -362,9 +460,11 @@ class PythonCodeInterpreter():
                 "tools": self.tools
             }, completion_create_params.CompletionCreateParamsNonStreaming)
             json.dump(request_body, f, ensure_ascii=False)
+        print(f"Conversation finished. Result notebook: {self.ipynb_file}, Request/Response messages: {self.result_file}")
         return self.messages
 
 def main(argv=None):
+    init(autoreset=True)
     parser = argparse.ArgumentParser(
         description="Run the Python Code Interpreter conversation loop."
     )
@@ -400,7 +500,6 @@ def main(argv=None):
     pci = PythonCodeInterpreter(resolved_deployment)
     pci.system_message = True
     assistant_response = pci.run_conversation(message)
-    print(assistant_response)
     return 0
 
 
