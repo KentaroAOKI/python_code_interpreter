@@ -28,6 +28,7 @@ DEFAULT_CONFIG = {
     "AZURE_OPENAI_ENDPOINT": "https://<your-endpoint>.openai.azure.com/",
     "OPENAI_API_VERSION": "2024-10-01-preview",
     "OPENAI_API_KEY": "",
+    "CONVERSATION_LOOP_MAX_CYCLES": 100,
     "mcpServers": {},
 }
 
@@ -91,11 +92,9 @@ def load_pycodei_guide():
             return content
     return ""
 
-
 CONFIG = initialize_configuration()
 deployment_name = os.getenv("DEPLOYMENT_NAME")
 MCP_MANAGER = MCPClientManager(CONFIG.get("mcpServers"), base_dir=CONFIG_DIR)
-
 
 def resolve_client_provider():
     provider = (
@@ -129,21 +128,12 @@ class PythonCodeInterpreter():
         self.ipynb_result_dir = "results"
         self.ipynb_prefix = os.path.join(os.getcwd(), self.ipynb_result_dir, "running_")
         self.ipynb_file = ""
+        self.ipynb_dir = os.path.join(os.getcwd(),"notebooks", datetime.datetime.now().strftime("%Y%m%d%H%M%S"))
         self.result_file = ""
         self.messages = []
         self.tool_auto_permissions = {}
         self.tool_function_auto_permissions = set()
         self.tool_descriptions = {}
-        # base_system_content = textwrap.dedent(f"""
-        #     You are interacting with {self.deployment_name}, a large language model.
-        #     The model is based on ReAct technology and uses Python for data analysis and visualization.
-        #     When a message containing Python code is sent to Python, it is executed in the state-preserving
-        #     Jupyter notebook environment. Python returns the results of the execution.
-        #     '{self.persistent_data_dir}' drive can be used to store and persist user files.
-        #     Python is used to analyze, visualize, and predict the data. If you provide a data set, we will analyze it and create appropriate graphs for visualization. Additionally, we can extract trends from the data and provide future projections.
-        #     We can also provide information on a wide range of scientific topics, including natural language processing (NLP), machine learning, mathematics, physics, chemistry, and biology. Let us know what questions you have, what your research needs are, or what problems you need solved.
-        #     When a user hands you a file, first understand the type of data you are dealing with, its structure and characteristics, and tell me its contents. Use clear text and sometimes diagrams.
-        # """
         base_system_content = textwrap.dedent(f"""
             You are **{self.deployment_name}**, a large language model using **ReAct** reasoning with Python integration for computation, data analysis, and visualization.
 
@@ -163,6 +153,16 @@ class PythonCodeInterpreter():
             1. Identify type, structure, and key characteristics.
             2. Summarize contents clearly; use diagrams if helpful.
 
+            #### **Jupyter notebook file as ipynb_file Handling**
+            Create a notebook file (.ipynb) in the `./notebooks` directory.
+            - For a new purpose:
+            1. Name the file appropriately using alphabetic characters.
+            2. Use sequential numbering to make the file name different from existing filenames.
+            3. Create a new notebook file.
+            - For a continuous purpose:
+            1. Specify the existing filename.
+            2. Add a cell to the end of the existing notebook and run it.
+
             #### **Safety & Constraints**
             - Always verify reasoning before answering.
             - Ask clarifying questions if user intent is unclear.
@@ -177,7 +177,6 @@ class PythonCodeInterpreter():
             base_system_content = (
                 f"{base_system_content}\nAdditional instructions from {GUIDE_FILENAME}:\n{pycodei_guide}\n"
             )
-
         self.messages_system = [{
             "role": "system",
             "content": base_system_content
@@ -187,7 +186,6 @@ class PythonCodeInterpreter():
                 "type": "function",
                 "function": {
                     "name": "run_python",
-                    # "description": "When there is information I don't know, I run some Python code to get the results.",
                     "description": "If some information is unknown, run Python code to get the data from outside, do calculations, etc., to get the results.",
                     "parameters": {
                         "type": "object",
@@ -199,9 +197,16 @@ class PythonCodeInterpreter():
                                     "by you for all information. python code must not perform any directory or file "
                                     "operations outside of the current directory."
                                 ),
-                            }
+                            },
+                            "ipynb_file": {
+                                "type": "string",
+                                "description": (
+                                    "The path to the Jupyter notebook file to use as the execution environment. "
+                                    "If not exist, a new temporary notebook will be created for execution."
+                                ),
+                            },
                         },
-                        "required": ["python_code"],
+                        "required": ["python_code", "ipynb_file"],
                     },
                 }
             },
@@ -217,13 +222,6 @@ class PythonCodeInterpreter():
             self.available_functions.update(mcp_function_map)
             self._register_tool_descriptions(mcp_tools)
     
-    def ask_continue(self):
-        result = False
-        user_input = input("Do you want to continue running this program?(yes/no): ").strip().lower()
-        if user_input == "yes":
-            result = True
-        return result
-
     def _register_tool_descriptions(self, tools):
         for tool in tools:
             if tool.get("type") != "function":
@@ -307,27 +305,24 @@ class PythonCodeInterpreter():
                 return False
         return True
 
-    # Run Python code in the notebook
     def run_python_code_in_notebook(self, code: str, messages):
+        """Run the provided Python code in a Jupyter notebook environment and return the result as a string."""
+        # Extract code from JSON if necessary
         if re.match(r'^\s*\{\s*"python_code"\s*:', code):
-        # if code.startswith('{"python_code":'):
-            code = json.loads(code)["python_code"]
+            code_json = json.loads(code)
+            code = code_json["python_code"]
+            self.ipynb_file = code_json.get("ipynb_file", "notebook.ipynb")
+        else:
+            self.ipynb_file = "notebook.ipynb"
 
-        # Pause to review the program
-        # print(f"----------\n{code}\n----------")
-        # if not self.ask_continue():
-        #     quit()
-
-        # Run
+        # Run the code in the notebook
         results, self.ipynb_file = python_code_notebook.run_all(
             code,
             messages = messages,
             prepared_notebook=self.ipynb_file,
-            result_ipynb_prefix=self.ipynb_prefix,
-            remove_result_ipynb=False
+            notebook_dir=self.ipynb_dir,
             )
         result = results[-1]
-        # print(result)
         result_strs =  [x['text/plain'] for x in result if x.get('text/plain')]
         result_str = "\n".join(result_strs)
         return result_str
@@ -337,12 +332,12 @@ class PythonCodeInterpreter():
             "",
             messages = messages,
             prepared_notebook=self.ipynb_file,
-            result_ipynb_prefix=self.ipynb_prefix,
-            remove_result_ipynb=False
+            notebook_dir=self.ipynb_dir,
             )
         return
 
     def run_conversation(self, message):
+        """Run the conversation loop with the provided initial message."""
         # Create a directory to store persistent data
         if not os.path.exists(self.persistent_data_dir):
             os.makedirs(self.persistent_data_dir, exist_ok=True)
@@ -351,7 +346,7 @@ class PythonCodeInterpreter():
             self.messages.extend(self.messages_system)
         self.messages.append({"role": "user", "content": message})
         # Initialize variables
-        max_loops = 200
+        max_loops = int(os.getenv("CONVERSATION_LOOP_MAX_CYCLES", 100))
         tool_choice_flag = False
         finish_flag = False
         usage_total_tokens = 0
@@ -364,7 +359,6 @@ class PythonCodeInterpreter():
                 model=self.deployment_name,
                 messages=self.messages,
                 tools=self.tools,
-                # tool_choice="auto" if tool_choice_flag else "none", 
             )
 
             usage_total_tokens += completion.usage.total_tokens
@@ -448,10 +442,6 @@ class PythonCodeInterpreter():
             if finish_flag:
                 break
         
-        # write results
-        current_ipynb_file = self.ipynb_file
-        self.ipynb_file = os.path.join(os.getcwd(), self.ipynb_result_dir, f'{result_name}.ipynb')
-        os.rename(current_ipynb_file, self.ipynb_file)
         self.result_file = os.path.join(os.getcwd(), self.ipynb_result_dir, f'{result_name}.json')
         with open(self.result_file, 'w', encoding='utf-8') as f:
             request_body = openai._utils._transform.maybe_transform({
@@ -460,7 +450,7 @@ class PythonCodeInterpreter():
                 "tools": self.tools
             }, completion_create_params.CompletionCreateParamsNonStreaming)
             json.dump(request_body, f, ensure_ascii=False)
-        print(f"Conversation finished. Result notebook: {self.ipynb_file}, Request/Response messages: {self.result_file}")
+        print(f"Conversation finished. Request/Response messages: {self.result_file}")
         return self.messages
 
 def main(argv=None):
