@@ -69,7 +69,7 @@ def run_all(code: str, messages=[], prepared_notebook="", result_ipynb_prefix=""
                             result_cell.append(data)
                         else:
                             print(f'output_type={output["output_type"]}')
-                        print(data)
+                        # print(data)
                     result.append(result_cell)
                 else:
                     # Pass because cells such as markdown are not included in the result
