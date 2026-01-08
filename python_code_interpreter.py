@@ -4,9 +4,14 @@ import inspect
 import json
 import os
 import re
+import sys, io
 from pathlib import Path
 import textwrap
 from colorama import init, Fore, Style
+
+from prompt_toolkit import prompt
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.history import FileHistory
 
 from openai import AzureOpenAI
 from openai import OpenAI
@@ -18,6 +23,7 @@ import python_code_notebook
 from mcp_client_manager import MCPClientManager
 
 DEFAULT_CONFIG_DIR = Path.home() / ".pycodei"
+DEFAULT_HISTORY_FILE = Path.home() / ".pycodei" / "prompt_history"
 CONFIG_DIR = Path(os.environ.get("PYCODEI_CONFIG_DIR", DEFAULT_CONFIG_DIR))
 CONFIG_PATH = CONFIG_DIR / "config.json"
 GUIDE_FILENAME = "PYCODEI.md"
@@ -32,6 +38,18 @@ DEFAULT_CONFIG = {
     "mcpServers": {},
 }
 
+# Ensure stdin can handle UTF-8 input
+sys.stdin = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8', errors='ignore')
+kb = KeyBindings()
+# Enter is for input confirmation
+@kb.add("enter")
+def _(event):
+    event.current_buffer.validate_and_handle()
+# Alt+Enter is for newline (Alt often comes as ESC)
+@kb.add("escape", "enter")
+def _(event):
+    event.current_buffer.newline()
+history = FileHistory(DEFAULT_HISTORY_FILE)
 
 def load_user_config():
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -125,8 +143,7 @@ class PythonCodeInterpreter():
         self.deployment_name = deployment_name
         self.persistent_data_dir = os.path.join(os.getcwd(), "ai_workspace")
         self.current_messages_index = 1
-        self.ipynb_result_dir = "results"
-        self.ipynb_prefix = os.path.join(os.getcwd(), self.ipynb_result_dir, "running_")
+        self.ipynb_result_dir = "logs"
         self.ipynb_file = ""
         self.ipynb_dir = os.path.join(os.getcwd(),"notebooks", datetime.datetime.now().strftime("%Y%m%d%H%M%S"))
         self.result_file = ""
@@ -152,17 +169,7 @@ class PythonCodeInterpreter():
             - When a file is provided:
             1. Identify type, structure, and key characteristics.
             2. Summarize contents clearly; use diagrams if helpful.
-
-            #### **Jupyter notebook file as ipynb_file Handling**
-            Create a notebook file (.ipynb) in the `./notebooks` directory.
-            - For a new purpose:
-            1. Name the file appropriately using alphabetic characters.
-            2. Use sequential numbering to make the file name different from existing filenames.
-            3. Create a new notebook file.
-            - For a continuous purpose:
-            1. Specify the existing filename.
-            2. Add a cell to the end of the existing notebook and run it.
-
+            
             #### **Safety & Constraints**
             - Always verify reasoning before answering.
             - Ask clarifying questions if user intent is unclear.
@@ -198,15 +205,8 @@ class PythonCodeInterpreter():
                                     "operations outside of the current directory."
                                 ),
                             },
-                            "ipynb_file": {
-                                "type": "string",
-                                "description": (
-                                    "The path to the Jupyter notebook file to use as the execution environment. "
-                                    "If not exist, a new temporary notebook will be created for execution."
-                                ),
-                            },
                         },
-                        "required": ["python_code", "ipynb_file"],
+                        "required": ["python_code"],
                     },
                 }
             },
@@ -279,7 +279,7 @@ class PythonCodeInterpreter():
             "[f] always allow this function / [n] deny"
         )
         while True:
-            decision = input("Enter your choice (y/a/f/n): ").strip().lower()
+            decision = prompt("Enter your choice (y/a/f/n): ", multiline=False).strip().lower()
             if decision in ("y", "yes"):
                 return "allow"
             if decision in ("a", "always_function+args"):
@@ -311,7 +311,7 @@ class PythonCodeInterpreter():
         if re.match(r'^\s*\{\s*"python_code"\s*:', code):
             code_json = json.loads(code)
             code = code_json["python_code"]
-            self.ipynb_file = code_json.get("ipynb_file", "notebook.ipynb")
+            self.ipynb_file = "notebook.ipynb"
         else:
             self.ipynb_file = "notebook.ipynb"
 
@@ -350,7 +350,7 @@ class PythonCodeInterpreter():
         tool_choice_flag = False
         finish_flag = False
         usage_total_tokens = 0
-        result_name = f'result_{datetime.datetime.now().strftime("%Y%m%d-%H%M%S")}'
+        result_name = f'log_{datetime.datetime.now().strftime("%Y%m%d-%H%M%S")}'
         # Conversations start
         for i in range(max_loops):
             print(f"Loop {i+1}/{max_loops}, total tokens used: {usage_total_tokens}")
@@ -428,7 +428,12 @@ class PythonCodeInterpreter():
                     }
                 )
                 print(f"------\nResponse: {response_message.content}")
-                user_input = input("Chat here. 'exit' to leave: ").strip().lower()
+                user_input = prompt(
+                    "Chat here. 'exit' to leave (Alt+Enter for newline, Enter to send):\n",
+                    multiline=True,
+                    key_bindings=kb,
+                    history=history,
+                )
                 if user_input == 'exit':
                     finish_flag = True
                 else:
@@ -439,17 +444,22 @@ class PythonCodeInterpreter():
             else:
                 print(f"Unexpected response reason: {response_reason}")
             self.current_messages_index = len(self.messages)
+
+            # Save the conversation log after each loop
+            os.makedirs(os.path.join(os.getcwd(), self.ipynb_result_dir), exist_ok=True)
+            self.result_file = os.path.join(os.getcwd(), self.ipynb_result_dir, f'{result_name}.json')
+            with open(self.result_file, 'w', encoding='utf-8') as f:
+                request_body = openai._utils._transform.maybe_transform({
+                    "messages": self.messages,
+                    "model": self.deployment_name,
+                    "tools": self.tools
+                }, completion_create_params.CompletionCreateParamsNonStreaming)
+                json.dump(request_body, f, ensure_ascii=False)
+
+            # Check finish flag
             if finish_flag:
                 break
         
-        self.result_file = os.path.join(os.getcwd(), self.ipynb_result_dir, f'{result_name}.json')
-        with open(self.result_file, 'w', encoding='utf-8') as f:
-            request_body = openai._utils._transform.maybe_transform({
-                "messages": self.messages,
-                "model": self.deployment_name,
-                "tools": self.tools
-            }, completion_create_params.CompletionCreateParamsNonStreaming)
-            json.dump(request_body, f, ensure_ascii=False)
         print(f"Conversation finished. Request/Response messages: {self.result_file}")
         return self.messages
 
@@ -478,7 +488,13 @@ def main(argv=None):
     message = args.message
     if not message:
         try:
-            message = input("Enter the initial message for the interpreter: ").strip()
+            message = prompt(
+                "Enter the initial message for the interpreter:\n",
+                multiline=True,
+                key_bindings=kb,
+                history=history,
+            )
+
         except KeyboardInterrupt:
             print("\nAborted.")
             return 1

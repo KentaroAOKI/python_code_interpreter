@@ -17,3 +17,5 @@ numpy
 pandas
 scikit-learn
 seaborn
+
+prompt_toolkit
