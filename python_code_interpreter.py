@@ -28,7 +28,7 @@ CONFIG_DIR = Path(os.environ.get("PYCODEI_CONFIG_DIR", DEFAULT_CONFIG_DIR))
 CONFIG_PATH = CONFIG_DIR / "config.json"
 GUIDE_FILENAME = "PYCODEI.md"
 DEFAULT_CONFIG = {
-    "DEPLOYMENT_NAME": "gpt-4o-mini",
+    "DEPLOYMENT_NAME": "gpt-5-mini",
     "PYCODEI_CLIENT": "azure",
     "AZURE_OPENAI_API_KEY": "",
     "AZURE_OPENAI_ENDPOINT": "https://<your-endpoint>.openai.azure.com/",
@@ -350,18 +350,35 @@ class PythonCodeInterpreter():
         tool_choice_flag = False
         finish_flag = False
         usage_total_tokens = 0
+        usage_prompt_tokens = 0
+        usage_cached_tokens = 0
+        usage_completion_tokens = 0
         result_name = f'log_{datetime.datetime.now().strftime("%Y%m%d-%H%M%S")}'
+
         # Conversations start
         for i in range(max_loops):
-            print(f"Loop {i+1}/{max_loops}, total tokens used: {usage_total_tokens}")
-
-            completion = self.client.chat.completions.create(
-                model=self.deployment_name,
-                messages=self.messages,
-                tools=self.tools,
+            print(f"Loop {i+1}/{max_loops}, "
+                  f"total tokens: {usage_total_tokens}, "
+                  f"prompt tokens: {usage_prompt_tokens}, "
+                  f"cached tokens: {usage_cached_tokens}, "
+                  f"completion tokens: {usage_completion_tokens}"
             )
+            try:
+                completion = self.client.chat.completions.create(
+                    model=self.deployment_name,
+                    messages=self.messages,
+                    tools=self.tools,
+                )
+            except Exception as e:
+                print(f"Error during chat completion: {e}")
+                break
 
+            # Update token usage statistics
             usage_total_tokens += completion.usage.total_tokens
+            usage_prompt_tokens += completion.usage.prompt_tokens
+            usage_cached_tokens += completion.usage.prompt_tokens_details.cached_tokens
+            usage_completion_tokens += completion.usage.completion_tokens
+
             response_message = completion.choices[0].message
             response_reason = completion.choices[0].finish_reason
             response_role = response_message.role
@@ -458,9 +475,9 @@ class PythonCodeInterpreter():
 
             # Check finish flag
             if finish_flag:
+                print(f"Conversation finished. Request/Response messages: {self.result_file}")
                 break
-        
-        print(f"Conversation finished. Request/Response messages: {self.result_file}")
+       
         return self.messages
 
 def main(argv=None):
@@ -489,7 +506,7 @@ def main(argv=None):
     if not message:
         try:
             message = prompt(
-                "Enter the initial message for the interpreter:\n",
+                "Enter the initial message for the interpreter (Alt+Enter for newline, Enter to send):\n",
                 multiline=True,
                 key_bindings=kb,
                 history=history,

@@ -32,6 +32,7 @@ DEFAULT_ENCODING_ERRORS = "strict"
 
 
 def _load_distribution_version() -> str:
+    """Load the version of the 'pycodei' distribution, or return a default if not found."""
     try:
         return version("pycodei")
     except PackageNotFoundError:
@@ -39,14 +40,19 @@ def _load_distribution_version() -> str:
 
 
 def _looks_like_path(value: str) -> bool:
+    """Heuristic to determine if a string looks like a file system path."""
+    # Unix absolute path
     if value.startswith(("~", ".", "/")):
         return True
+    # Windows absolute path
     if os.name == "nt" and (value.startswith("\\") or (len(value) > 1 and value[1] == ":")):
         return True
+    # Contains path separators
     return os.path.sep in value or (os.path.altsep and os.path.altsep in value)
 
 
 def _expand_path(value: str, base_dir: Path | None) -> str:
+    """Expand a file system path, resolving relative paths against a base directory if provided."""
     expanded = os.path.expanduser(value)
     if os.path.isabs(expanded) or base_dir is None:
         return expanded
@@ -56,8 +62,10 @@ def _expand_path(value: str, base_dir: Path | None) -> str:
 
 
 def _extract_env(raw_env: Mapping[str, Any] | None) -> dict[str, str]:
+    """Extract environment variables from a raw mapping, ensuring all values are strings."""
     if not raw_env:
         return {}
+    # Extract and convert to strings
     env: dict[str, str] = {}
     for key, value in raw_env.items():
         if not isinstance(key, str):
@@ -69,6 +77,7 @@ def _extract_env(raw_env: Mapping[str, Any] | None) -> dict[str, str]:
 
 
 def _safe_schema(schema: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Ensure the schema is a mapping; otherwise, return a default empty object schema."""
     if isinstance(schema, Mapping):
         return dict(schema)
     return {"type": "object", "properties": {}}
@@ -76,7 +85,7 @@ def _safe_schema(schema: Mapping[str, Any] | None) -> dict[str, Any]:
 
 @dataclass
 class MCPServerConfig:
-    """Normalized representation of a MCP server entry."""
+    """Configuration for an MCP server."""
 
     name: str
     transport: str = DEFAULT_TRANSPORT
