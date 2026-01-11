@@ -4,9 +4,14 @@ import inspect
 import json
 import os
 import re
+import sys, io
 from pathlib import Path
 import textwrap
 from colorama import init, Fore, Style
+
+from prompt_toolkit import prompt
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.history import FileHistory
 
 from openai import AzureOpenAI
 from openai import OpenAI
@@ -18,19 +23,33 @@ import python_code_notebook
 from mcp_client_manager import MCPClientManager
 
 DEFAULT_CONFIG_DIR = Path.home() / ".pycodei"
+DEFAULT_HISTORY_FILE = Path.home() / ".pycodei" / "prompt_history"
 CONFIG_DIR = Path(os.environ.get("PYCODEI_CONFIG_DIR", DEFAULT_CONFIG_DIR))
 CONFIG_PATH = CONFIG_DIR / "config.json"
 GUIDE_FILENAME = "PYCODEI.md"
 DEFAULT_CONFIG = {
-    "DEPLOYMENT_NAME": "gpt-4o-mini",
+    "DEPLOYMENT_NAME": "gpt-5-mini",
     "PYCODEI_CLIENT": "azure",
     "AZURE_OPENAI_API_KEY": "",
     "AZURE_OPENAI_ENDPOINT": "https://<your-endpoint>.openai.azure.com/",
     "OPENAI_API_VERSION": "2024-10-01-preview",
     "OPENAI_API_KEY": "",
+    "CONVERSATION_LOOP_MAX_CYCLES": 100,
     "mcpServers": {},
 }
 
+# Ensure stdin can handle UTF-8 input
+sys.stdin = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8', errors='ignore')
+kb = KeyBindings()
+# Enter is for input confirmation
+@kb.add("enter")
+def _(event):
+    event.current_buffer.validate_and_handle()
+# Alt+Enter is for newline (Alt often comes as ESC)
+@kb.add("escape", "enter")
+def _(event):
+    event.current_buffer.newline()
+history = FileHistory(DEFAULT_HISTORY_FILE)
 
 def load_user_config():
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -91,11 +110,9 @@ def load_pycodei_guide():
             return content
     return ""
 
-
 CONFIG = initialize_configuration()
 deployment_name = os.getenv("DEPLOYMENT_NAME")
 MCP_MANAGER = MCPClientManager(CONFIG.get("mcpServers"), base_dir=CONFIG_DIR)
-
 
 def resolve_client_provider():
     provider = (
@@ -126,24 +143,14 @@ class PythonCodeInterpreter():
         self.deployment_name = deployment_name
         self.persistent_data_dir = os.path.join(os.getcwd(), "ai_workspace")
         self.current_messages_index = 1
-        self.ipynb_result_dir = "results"
-        self.ipynb_prefix = os.path.join(os.getcwd(), self.ipynb_result_dir, "running_")
+        self.ipynb_result_dir = "logs"
         self.ipynb_file = ""
+        self.ipynb_dir = os.path.join(os.getcwd(),"notebooks", datetime.datetime.now().strftime("%Y%m%d%H%M%S"))
         self.result_file = ""
         self.messages = []
         self.tool_auto_permissions = {}
         self.tool_function_auto_permissions = set()
         self.tool_descriptions = {}
-        # base_system_content = textwrap.dedent(f"""
-        #     You are interacting with {self.deployment_name}, a large language model.
-        #     The model is based on ReAct technology and uses Python for data analysis and visualization.
-        #     When a message containing Python code is sent to Python, it is executed in the state-preserving
-        #     Jupyter notebook environment. Python returns the results of the execution.
-        #     '{self.persistent_data_dir}' drive can be used to store and persist user files.
-        #     Python is used to analyze, visualize, and predict the data. If you provide a data set, we will analyze it and create appropriate graphs for visualization. Additionally, we can extract trends from the data and provide future projections.
-        #     We can also provide information on a wide range of scientific topics, including natural language processing (NLP), machine learning, mathematics, physics, chemistry, and biology. Let us know what questions you have, what your research needs are, or what problems you need solved.
-        #     When a user hands you a file, first understand the type of data you are dealing with, its structure and characteristics, and tell me its contents. Use clear text and sometimes diagrams.
-        # """
         base_system_content = textwrap.dedent(f"""
             You are **{self.deployment_name}**, a large language model using **ReAct** reasoning with Python integration for computation, data analysis, and visualization.
 
@@ -162,7 +169,7 @@ class PythonCodeInterpreter():
             - When a file is provided:
             1. Identify type, structure, and key characteristics.
             2. Summarize contents clearly; use diagrams if helpful.
-
+            
             #### **Safety & Constraints**
             - Always verify reasoning before answering.
             - Ask clarifying questions if user intent is unclear.
@@ -177,7 +184,6 @@ class PythonCodeInterpreter():
             base_system_content = (
                 f"{base_system_content}\nAdditional instructions from {GUIDE_FILENAME}:\n{pycodei_guide}\n"
             )
-
         self.messages_system = [{
             "role": "system",
             "content": base_system_content
@@ -187,7 +193,6 @@ class PythonCodeInterpreter():
                 "type": "function",
                 "function": {
                     "name": "run_python",
-                    # "description": "When there is information I don't know, I run some Python code to get the results.",
                     "description": "If some information is unknown, run Python code to get the data from outside, do calculations, etc., to get the results.",
                     "parameters": {
                         "type": "object",
@@ -199,7 +204,7 @@ class PythonCodeInterpreter():
                                     "by you for all information. python code must not perform any directory or file "
                                     "operations outside of the current directory."
                                 ),
-                            }
+                            },
                         },
                         "required": ["python_code"],
                     },
@@ -217,13 +222,6 @@ class PythonCodeInterpreter():
             self.available_functions.update(mcp_function_map)
             self._register_tool_descriptions(mcp_tools)
     
-    def ask_continue(self):
-        result = False
-        user_input = input("Do you want to continue running this program?(yes/no): ").strip().lower()
-        if user_input == "yes":
-            result = True
-        return result
-
     def _register_tool_descriptions(self, tools):
         for tool in tools:
             if tool.get("type") != "function":
@@ -281,7 +279,7 @@ class PythonCodeInterpreter():
             "[f] always allow this function / [n] deny"
         )
         while True:
-            decision = input("Enter your choice (y/a/f/n): ").strip().lower()
+            decision = prompt("Enter your choice (y/a/f/n): ", multiline=False).strip().lower()
             if decision in ("y", "yes"):
                 return "allow"
             if decision in ("a", "always_function+args"):
@@ -307,27 +305,24 @@ class PythonCodeInterpreter():
                 return False
         return True
 
-    # Run Python code in the notebook
     def run_python_code_in_notebook(self, code: str, messages):
+        """Run the provided Python code in a Jupyter notebook environment and return the result as a string."""
+        # Extract code from JSON if necessary
         if re.match(r'^\s*\{\s*"python_code"\s*:', code):
-        # if code.startswith('{"python_code":'):
-            code = json.loads(code)["python_code"]
+            code_json = json.loads(code)
+            code = code_json["python_code"]
+            self.ipynb_file = "notebook.ipynb"
+        else:
+            self.ipynb_file = "notebook.ipynb"
 
-        # Pause to review the program
-        # print(f"----------\n{code}\n----------")
-        # if not self.ask_continue():
-        #     quit()
-
-        # Run
+        # Run the code in the notebook
         results, self.ipynb_file = python_code_notebook.run_all(
             code,
             messages = messages,
             prepared_notebook=self.ipynb_file,
-            result_ipynb_prefix=self.ipynb_prefix,
-            remove_result_ipynb=False
+            notebook_dir=self.ipynb_dir,
             )
         result = results[-1]
-        # print(result)
         result_strs =  [x['text/plain'] for x in result if x.get('text/plain')]
         result_str = "\n".join(result_strs)
         return result_str
@@ -337,12 +332,12 @@ class PythonCodeInterpreter():
             "",
             messages = messages,
             prepared_notebook=self.ipynb_file,
-            result_ipynb_prefix=self.ipynb_prefix,
-            remove_result_ipynb=False
+            notebook_dir=self.ipynb_dir,
             )
         return
 
     def run_conversation(self, message):
+        """Run the conversation loop with the provided initial message."""
         # Create a directory to store persistent data
         if not os.path.exists(self.persistent_data_dir):
             os.makedirs(self.persistent_data_dir, exist_ok=True)
@@ -351,23 +346,39 @@ class PythonCodeInterpreter():
             self.messages.extend(self.messages_system)
         self.messages.append({"role": "user", "content": message})
         # Initialize variables
-        max_loops = 200
+        max_loops = int(os.getenv("CONVERSATION_LOOP_MAX_CYCLES", 100))
         tool_choice_flag = False
         finish_flag = False
         usage_total_tokens = 0
-        result_name = f'result_{datetime.datetime.now().strftime("%Y%m%d-%H%M%S")}'
+        usage_prompt_tokens = 0
+        usage_cached_tokens = 0
+        usage_completion_tokens = 0
+        result_name = f'log_{datetime.datetime.now().strftime("%Y%m%d-%H%M%S")}'
+
         # Conversations start
         for i in range(max_loops):
-            print(f"Loop {i+1}/{max_loops}, total tokens used: {usage_total_tokens}")
-
-            completion = self.client.chat.completions.create(
-                model=self.deployment_name,
-                messages=self.messages,
-                tools=self.tools,
-                # tool_choice="auto" if tool_choice_flag else "none", 
+            print(f"Loop {i+1}/{max_loops}, "
+                  f"total tokens: {usage_total_tokens}, "
+                  f"prompt tokens: {usage_prompt_tokens}, "
+                  f"cached tokens: {usage_cached_tokens}, "
+                  f"completion tokens: {usage_completion_tokens}"
             )
+            try:
+                completion = self.client.chat.completions.create(
+                    model=self.deployment_name,
+                    messages=self.messages,
+                    tools=self.tools,
+                )
+            except Exception as e:
+                print(f"Error during chat completion: {e}")
+                break
 
+            # Update token usage statistics
             usage_total_tokens += completion.usage.total_tokens
+            usage_prompt_tokens += completion.usage.prompt_tokens
+            usage_cached_tokens += completion.usage.prompt_tokens_details.cached_tokens
+            usage_completion_tokens += completion.usage.completion_tokens
+
             response_message = completion.choices[0].message
             response_reason = completion.choices[0].finish_reason
             response_role = response_message.role
@@ -434,7 +445,12 @@ class PythonCodeInterpreter():
                     }
                 )
                 print(f"------\nResponse: {response_message.content}")
-                user_input = input("Chat here. 'exit' to leave: ").strip().lower()
+                user_input = prompt(
+                    "Chat here. 'exit' to leave (Alt+Enter for newline, Enter to send):\n",
+                    multiline=True,
+                    key_bindings=kb,
+                    history=history,
+                )
                 if user_input == 'exit':
                     finish_flag = True
                 else:
@@ -445,22 +461,23 @@ class PythonCodeInterpreter():
             else:
                 print(f"Unexpected response reason: {response_reason}")
             self.current_messages_index = len(self.messages)
+
+            # Save the conversation log after each loop
+            os.makedirs(os.path.join(os.getcwd(), self.ipynb_result_dir), exist_ok=True)
+            self.result_file = os.path.join(os.getcwd(), self.ipynb_result_dir, f'{result_name}.json')
+            with open(self.result_file, 'w', encoding='utf-8') as f:
+                request_body = openai._utils._transform.maybe_transform({
+                    "messages": self.messages,
+                    "model": self.deployment_name,
+                    "tools": self.tools
+                }, completion_create_params.CompletionCreateParamsNonStreaming)
+                json.dump(request_body, f, ensure_ascii=False)
+
+            # Check finish flag
             if finish_flag:
+                print(f"Conversation finished. Request/Response messages: {self.result_file}")
                 break
-        
-        # write results
-        current_ipynb_file = self.ipynb_file
-        self.ipynb_file = os.path.join(os.getcwd(), self.ipynb_result_dir, f'{result_name}.ipynb')
-        os.rename(current_ipynb_file, self.ipynb_file)
-        self.result_file = os.path.join(os.getcwd(), self.ipynb_result_dir, f'{result_name}.json')
-        with open(self.result_file, 'w', encoding='utf-8') as f:
-            request_body = openai._utils._transform.maybe_transform({
-                "messages": self.messages,
-                "model": self.deployment_name,
-                "tools": self.tools
-            }, completion_create_params.CompletionCreateParamsNonStreaming)
-            json.dump(request_body, f, ensure_ascii=False)
-        print(f"Conversation finished. Result notebook: {self.ipynb_file}, Request/Response messages: {self.result_file}")
+       
         return self.messages
 
 def main(argv=None):
@@ -488,7 +505,13 @@ def main(argv=None):
     message = args.message
     if not message:
         try:
-            message = input("Enter the initial message for the interpreter: ").strip()
+            message = prompt(
+                "Enter the initial message for the interpreter (Alt+Enter for newline, Enter to send):\n",
+                multiline=True,
+                key_bindings=kb,
+                history=history,
+            )
+
         except KeyboardInterrupt:
             print("\nAborted.")
             return 1

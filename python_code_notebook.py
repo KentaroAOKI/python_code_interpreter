@@ -7,19 +7,21 @@ import os
 import json
 import ast
 import openai
+from pathlib import Path
 
-def run_all(code: str, messages=[], prepared_notebook="", result_ipynb_prefix="", remove_result_ipynb=True):
-    if prepared_notebook != "":
-        # Read the prepared notebook if provided
+def run_all(code: str, messages=[], prepared_notebook="", notebook_dir=""):
+    if not prepared_notebook:
+        prepared_notebook = "notebook.ipynb"
+    if not os.path.isabs(prepared_notebook):
+        prepared_notebook = os.path.join(notebook_dir, prepared_notebook)
+    prepared_notebook = os.path.abspath(prepared_notebook)
+    os.makedirs(os.path.dirname(prepared_notebook) or ".", exist_ok=True)
+    if os.path.isfile(prepared_notebook):
         nb = nbformat.read(prepared_notebook, as_version=4)
-        tmp_in_path = prepared_notebook
     else:
-        # Create a new temporary notebook if no prepared notebook is provided
-        os.makedirs(os.path.dirname(result_ipynb_prefix),exist_ok=True)       
         nb = new_notebook()
-        fd, tmp_in_path = tempfile.mkstemp(prefix=result_ipynb_prefix, suffix=".ipynb")
-        os.close(fd)
-    fd, tmp_out_path = tempfile.mkstemp(prefix=result_ipynb_prefix, suffix=".ipynb")
+    tmp_in_path = prepared_notebook
+    fd, tmp_out_path = tempfile.mkstemp(prefix=Path(prepared_notebook).stem, suffix=".ipynb")
     os.close(fd)
     for message in messages:
         # Add messages as markdown cells
@@ -82,14 +84,14 @@ def run_all(code: str, messages=[], prepared_notebook="", result_ipynb_prefix=""
             f.write(nbformat.v4.writes(nb))
         result = []
 
-    # Remove temporary input file
-    os.remove(tmp_in_path)
-    if remove_result_ipynb:
-        # Remove temporary output file if specified
-        os.remove(tmp_out_path)
-        tmp_out_path = ""
+    # Update content of tmp_in_path to keep file descriptor correct
+    with open(tmp_out_path, 'r') as f:
+        out_content = f.read()
+    with open(tmp_in_path, 'w') as f:
+        f.seek(0)
+        f.write(out_content)
 
-    return result, tmp_out_path
+    return result, tmp_in_path
 
 if __name__ == '__main__':
     import json
