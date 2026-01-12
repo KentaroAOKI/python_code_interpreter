@@ -19,3 +19,6 @@ scikit-learn
 seaborn
 
 prompt_toolkit
+rich
+pyfiglet
+colorama

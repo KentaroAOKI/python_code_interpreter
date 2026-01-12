@@ -7,11 +7,22 @@ import re
 import sys, io
 from pathlib import Path
 import textwrap
+from importlib.metadata import version, PackageNotFoundError
 from colorama import init, Fore, Style
+from rich.console import Console
+from rich.text import Text
+from rich.table import Table
+import pyfiglet
 
 from prompt_toolkit import prompt
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.history import FileHistory
+
+# Get version from installed package
+try:
+    __version__ = version("pycodei")
+except PackageNotFoundError:
+    __version__ = "unknown"
 
 from openai import AzureOpenAI
 from openai import OpenAI
@@ -35,6 +46,8 @@ DEFAULT_CONFIG = {
     "OPENAI_API_VERSION": "2024-10-01-preview",
     "OPENAI_API_KEY": "",
     "CONVERSATION_LOOP_MAX_CYCLES": 100,
+    "Title": "PYCODEI",
+    "TitleFont": "slant",
     "mcpServers": {},
 }
 
@@ -139,7 +152,6 @@ class PythonCodeInterpreter():
         self.client_provider = resolve_client_provider()
         self.client = create_llm_client()
 
-        self.system_message = True
         self.deployment_name = deployment_name
         self.persistent_data_dir = os.path.join(os.getcwd(), "ai_workspace")
         self.current_messages_index = 1
@@ -336,15 +348,44 @@ class PythonCodeInterpreter():
             )
         return
 
-    def run_conversation(self, message):
+    def initialize_messages(self, messages, overwrite_default_system_message=True):
+        self.messages = []
+        if overwrite_default_system_message:
+            filtered_messages = [
+                msg for msg in messages if msg.get("role") != "system"
+            ]
+            self.messages.extend(self.messages_system)
+            self.messages.extend(filtered_messages)
+        else:
+            system_messages = [
+                msg for msg in messages if msg.get("role") == "system"
+            ]
+            if not system_messages:
+                self.messages.extend(self.messages_system)
+            self.messages.extend(messages)
+
+    def print_title(self):
+        title = os.getenv("Title", "PYCODEI")
+        font = os.getenv("TitleFont", "slant")
+        try:
+            console = Console()
+            ascii_text = pyfiglet.figlet_format(title, font=font).rstrip()
+            if title == "PYCODEI":
+                pycodei_version = f" {__version__}"
+            else:
+                pycodei_version = f" Powered by PYCODEI {__version__}"
+            console.print(Text(ascii_text + pycodei_version, style="bold cyan"))
+        except ImportError:
+            console = Console()
+            ascii_text = pyfiglet.figlet_format("PYCODEI", font="slant").rstrip()
+            console.print(Text(ascii_text, style="bold cyan"))
+            console.print(Text(f"Version {__version__}", style="dim cyan"), justify="left")
+
+    def run_conversation(self):
         """Run the conversation loop with the provided initial message."""
         # Create a directory to store persistent data
         if not os.path.exists(self.persistent_data_dir):
             os.makedirs(self.persistent_data_dir, exist_ok=True)
-        # Initialize the messages
-        if self.system_message is True:
-            self.messages.extend(self.messages_system)
-        self.messages.append({"role": "user", "content": message})
         # Initialize variables
         max_loops = int(os.getenv("CONVERSATION_LOOP_MAX_CYCLES", 100))
         tool_choice_flag = False
@@ -486,6 +527,12 @@ def main(argv=None):
         description="Run the Python Code Interpreter conversation loop."
     )
     parser.add_argument(
+        "--version",
+        action="version",
+        version=f"pycodei {__version__}",
+        help="Show version and exit."
+    )
+    parser.add_argument(
         "message",
         nargs="?",
         help="Initial instruction sent to the interpreter. If omitted, you will be prompted."
@@ -496,11 +543,26 @@ def main(argv=None):
         default=None,
         help="Override the DEPLOYMENT_NAME environment variable."
     )
+    parser.add_argument(
+        "--load-message",
+        dest="load_message",
+        default=None,
+        help="Path to a message log file to load conversation history from."
+    )
+    parser.add_argument(
+        "--load-message-without-system",
+        dest="load_message_without_system",
+        default=None,
+        help="Path to a message log file to load conversation history from without the system message."
+    )
     args = parser.parse_args(argv)
 
     resolved_deployment = args.deployment_name or os.getenv("DEPLOYMENT_NAME")
     if not resolved_deployment:
         parser.error("DEPLOYMENT_NAME is not set. Export it or pass --deployment-name.")
+
+    pci = PythonCodeInterpreter(resolved_deployment)
+    pci.print_title()
 
     message = args.message
     if not message:
@@ -516,13 +578,27 @@ def main(argv=None):
             print("\nAborted.")
             return 1
 
-    if not message:
-        print("No message provided. Exiting.")
-        return 1
+    if args.load_message or args.load_message_without_system:
+        load_path = args.load_message or args.load_message_without_system
+        if not os.path.exists(load_path):
+            parser.error(f"Message log file '{load_path}' does not exist.")
+        try:
+            with open(load_path, "r", encoding="utf-8") as f:
+                loaded_data = json.load(f)
+        except Exception as e:
+            parser.error(f"Failed to load message log file: {e}")
+        if not isinstance(loaded_data, dict) or "messages" not in loaded_data:
+            parser.error("Invalid message log file format. Expected a JSON object with a 'messages' key.")
+        loaded_messages = loaded_data["messages"]
+        loaded_messages.append({"role": "user", "content": message})
+        if args.load_message_without_system:
+            pci.initialize_messages(loaded_messages, overwrite_default_system_message=True)
+        else:
+            pci.initialize_messages(loaded_messages, overwrite_default_system_message=False)
+    else:
+        pci.initialize_messages([{"role": "user", "content": message}], overwrite_default_system_message=True)
 
-    pci = PythonCodeInterpreter(resolved_deployment)
-    pci.system_message = True
-    assistant_response = pci.run_conversation(message)
+    assistant_response = pci.run_conversation()
     return 0
 
 
