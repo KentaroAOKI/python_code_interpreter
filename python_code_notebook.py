@@ -5,9 +5,50 @@ import papermill_enhancement.papermill as pm
 import tempfile
 import os
 import json
+import re
 import ast
 import openai
 from pathlib import Path
+
+def create_notebook(notebook_path: str, messages=[]):
+    nb = new_notebook()
+    for message in messages:
+        # Add messages as markdown cells
+        if isinstance(message, dict):
+            if 'role' in message and 'content' in message:
+                if message['role'] == 'system':
+                    continue  # Skip system messages
+                nb.cells.append(new_markdown_cell(f"## {message['role']}  \n{message['content']}"))
+            if 'tool_calls' in message:
+                for tool_call in message['tool_calls']:
+                    if 'function' in tool_call and 'name' in tool_call['function'] and 'run_python' == tool_call['function']['name'] and 'arguments' in tool_call['function']:
+                        arguments_json = json.loads(tool_call['function']['arguments'])
+                        nb.cells.append(new_code_cell(arguments_json.get('python_code', '')))
+    with open(notebook_path, 'w') as f:
+        f.write(nbformat.v4.writes(nb))
+
+
+def pick_last_frame_and_exception(tb_lines):
+    # remove ANSI escape codes
+    def strip_ansi(text):
+        ansi_escape = re.compile(r'\x1b\[[0-9;]*m')
+        return ansi_escape.sub('', text)
+    
+    # Cell In[N], line M pattern
+    file_re = re.compile(r'^\s*Cell\s+In\[\d+\],\s+line\s+\d+')
+
+    # Find the last Cell line (matching after removing ANSI codes)
+    idx = next((i for i in range(len(tb_lines)-1, -1, -1) 
+                if file_re.match(strip_ansi(tb_lines[i]))), None)
+    
+    # Collect the last frame and the exception line
+    out = []
+    if idx is not None:
+        out.append(tb_lines[idx].rstrip("\n"))
+    if 0 < len(tb_lines):
+        out.append(tb_lines[-1].rstrip("\n"))  # Exception line
+    return out
+
 
 def run_all(code: str, messages=[], prepared_notebook="", notebook_dir=""):
     if not prepared_notebook:
@@ -60,13 +101,20 @@ def run_all(code: str, messages=[], prepared_notebook="", notebook_dir=""):
                             data_dict = ast.literal_eval(data)
                             data_dict['output_type'] = output['output_type']
                             result_cell.append(data_dict)
-                        elif output['output_type'] == 'stream' and 'text' in output:
-                            ## Collect streams output from code execution (For example, warnings, progress information, etc.)
-                            data = {'text/plain': str(output['text']), 'output_type': output['output_type']}
-                            result_cell.append(data)
+                        elif output['output_type'] == 'stream' and 'name' in output and 'text' in output:
+                            if output['name'] == 'stdout':
+                                ## Collect stdout output from code execution (For example, warnings, progress information, etc.)
+                                data = {'text/plain': str(output['text']), 'output_type': output['output_type']}
+                                result_cell.append(data)
+                            elif output['name'] == 'stderr':
+                                ## Collect stderr output from code execution (For example, warning messages.)
+                                pass
                         elif output['output_type'] == 'error' and 'traceback' in output:
                             ## Collect error details (For example, trace etc.)
-                            traces = [output['traceback'][1],output['traceback'][2],output['traceback'][-1]]
+                            traces = output['traceback']
+                            total_lines = len(traces)
+                            if total_lines > 3:  # Only abbreviate if there are more than 3 lines
+                                traces = pick_last_frame_and_exception(traces)
                             data = {'text/plain': "\n".join(traces), 'output_type': output['output_type']}
                             result_cell.append(data)
                         else:

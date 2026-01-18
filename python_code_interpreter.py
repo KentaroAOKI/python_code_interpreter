@@ -364,6 +364,11 @@ class PythonCodeInterpreter():
                 self.messages.extend(self.messages_system)
             self.messages.extend(messages)
 
+    def initialize_notebook(self, messages):
+        os.makedirs(self.ipynb_dir, exist_ok=True)
+        self.ipynb_file = os.path.join(self.ipynb_dir, "notebook.ipynb")
+        python_code_notebook.create_notebook(self.ipynb_file, messages)
+
     def print_title(self):
         title = os.getenv("Title", "PYCODEI")
         font = os.getenv("TitleFont", "slant")
@@ -598,7 +603,8 @@ def main(argv=None):
     else:
         pci.initialize_messages([{"role": "user", "content": message}], overwrite_default_system_message=True)
 
-    assistant_response = pci.run_conversation()
+    pci.initialize_notebook(pci.messages)
+    pci.run_conversation()
     return 0
 
 
