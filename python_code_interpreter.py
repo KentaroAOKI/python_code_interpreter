@@ -464,6 +464,7 @@ class PythonCodeInterpreter():
                             self.tool_auto_permissions[approval_key] = True
                         elif decision == "always_function":
                             self.tool_function_auto_permissions.add(function_name)
+                    # Execute the tool function
                     if should_execute:
                         function_response = function_to_call(function_arguments, content_messages)
                     else:

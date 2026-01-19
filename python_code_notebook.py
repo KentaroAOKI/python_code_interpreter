@@ -118,15 +118,16 @@ def run_all(code: str, messages=[], prepared_notebook="", notebook_dir=""):
                             data = {'text/plain': "\n".join(traces), 'output_type': output['output_type']}
                             result_cell.append(data)
                         else:
-                            print(f'output_type={output["output_type"]}')
-                        # print(data)
+                            # unknown output type
+                            print(f'Unknown notebook output: output_type={output["output_type"]}')
                     result.append(result_cell)
                 else:
                     # Pass because cells such as markdown are not included in the result
                     pass
 
         except Exception as e:
-            result.append([{'Exception': str(e)}])
+            data = {'text/plain': f"{type(e).__name__} occurred during execution. The details are as follows:\n{type(e).__name__}: {str(e)}\n", 'output_type': 'pycode_system_error'}
+            result.append(data)
     else:
         with open(tmp_out_path, 'w') as f:
             f.write(nbformat.v4.writes(nb))
