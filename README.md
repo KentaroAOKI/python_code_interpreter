@@ -119,6 +119,15 @@ When `pycodei` starts it will spin up each enabled server, discover its MCP tool
 ## Optional: PYCODEI.md
 This is an agent instruction. If you keep a `PYCODEI.md` file, its contents are appended to the system prompt every time `pycodei` starts. Place the file in one of these locations (checked in order): `~/.pycodei/PYCODEI.md`, the directory where your current working directory. Use it for persistent guardrails, safety rules, or project-specific requirements. If you have a database, define the database tables.
 
+## Output
+The pycodei outputs files to the logs and notebook directories regardless of interaction.
+
+### logs directory
+Saves the memory executed by the agent in the current log directory, which can be used for memory rewind.
+
+### notebook directory
+The agent saves the Python code it executed in a notebook in the current notebook directory, which data scientists can later modify and analyze the data.
+
 ## Local development workflow
 1. Clone the repository:
     ```bash

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pycodei"
 version = "0.1.9"
-description = "An interactive Python code interpreter designed to collaborate with OpenAI and Azure AI models."
+description = "The agent is designed to run Python code in a notebook environment, enabling data analysis, machine learning, inference, and visualization."
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "MIT"}
@@ -34,7 +34,7 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/KentaroAOKI/python_code_interpreter"
+Homepage = "https://github.com/KentaroAOKI/pycodei"
 
 [project.scripts]
 pycodei = "python_code_interpreter:main"
